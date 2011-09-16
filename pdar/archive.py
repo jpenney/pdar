@@ -22,6 +22,7 @@ import logging
 
 from datetime import datetime
 from gzip import GzipFile
+from tempfile import SpooledTemporaryFile
 from pkg_resources import parse_version
 
 from pdar.errors import *
@@ -93,9 +94,8 @@ creating new pdar:
     def save(self, path, force=False):
         if os.path.exists(path) and not force:
             raise RuntimeError('File already exists: %s' % path)
-        with open(path, 'wb') as patchfile:
-            patchfile.write(PDAR_ID)
-            gzfile = GzipFile(fileobj=patchfile, compresslevel=9)
+        with SpooledTemporaryFile() as tmpfile:
+            gzfile = GzipFile(mode='wb', fileobj=tmpfile, compresslevel=9)
             try:
                 tfile = tarfile.open(
                     mode='w', fileobj=gzfile,
@@ -109,8 +109,18 @@ creating new pdar:
                         patch.pax_dump(tfile)
                 finally:
                     tfile.close()
+                tmpfile.flush()
             finally:
                 gzfile.close()
+
+            tmpfile.flush()
+            with open(path, 'wb') as patchfile:
+                patchfile.write(PDAR_ID)
+                tmpfile.seek(0)
+                patchfile.writelines(tmpfile)
+                patchfile.write(chr(0))
+                patchfile.flush()
+                patchfile.close()
 
     def patch(self, path=None, patcher=None):
         if patcher is None:
