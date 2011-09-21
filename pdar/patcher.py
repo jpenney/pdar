@@ -171,8 +171,8 @@ class PDArchivePatcher(BasePatcher):
                     pass
 
     def _do_apply_entry(self, entry, path, data):
-        if not entry.verify_orig_hash(data):
-            if entry.verify_dest_hash(data):
+        if not entry.verify_orig_digest(data):
+            if entry.verify_dest_digest(data):
                 logging.info(
                     "patch already applied: %s", entry.target)
                 return
@@ -185,7 +185,7 @@ class PDArchivePatcher(BasePatcher):
         new_data = super(PDArchivePatcher, self)._do_apply_entry(
             entry, path, data)
 
-        if not entry.verify_dest_hash(new_data):
+        if not entry.verify_dest_digest(new_data):
             raise PatchedFileError(
                 "patched file does not contain expected data: %s"
                 % entry.target)

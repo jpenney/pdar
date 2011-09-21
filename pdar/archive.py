@@ -29,7 +29,7 @@ from pkg_resources import parse_version
 from pdar.errors import *
 from pdar.entry import *
 from pdar.patcher import DEFAULT_PATCHER_TYPE
-from pdar import PDAR_VERSION
+from pdar import PDAR_VERSION, DEFAULT_HASH_TYPE
 
 __all__ = ['PDArchive', 'PDAR_MAGIC', 'PDAR_ID']
 
@@ -39,10 +39,14 @@ PDAR_ID = '%s%03d%c' % (
 
 ARCHIVE_HEADER_VERSION = 'pdar_version'
 ARCHIVE_HEADER_CREATED = 'pdar_created_datetime'
+ARCHIVE_HEADER_HASH_TYPE = 'pdar_hash_type'
+
 
 class PDArchive(object):
 
-    def __init__(self, orig_path, dest_path, patterns=['*'], payload=None):
+    def __init__(self, orig_path, dest_path, patterns=['*'], payload=None,
+                 hash_type=DEFAULT_HASH_TYPE):
+        self._hash_type = hash_type
         if orig_path and dest_path and patterns and not payload:
             logging.debug("""\
 creating new pdar:
@@ -114,7 +118,7 @@ creating new pdar:
 
             def add_entry(targets, cls):
                 args = list(targets)
-                args += [ orig_path, dest_path ]
+                args += [ orig_path, dest_path, self.hash_type ]
                 entry = cls.create(*args)
                 if entry:
                     logging.info("adding '%s' entry for: %s" 
@@ -144,12 +148,17 @@ creating new pdar:
             self._patches = payload['patches']
             self._pdar_version = payload[ARCHIVE_HEADER_VERSION]
             self._created_datetime = payload[ARCHIVE_HEADER_CREATED]
+            self._hash_type = payload[ARCHIVE_HEADER_HASH_TYPE]
 
         else:
             raise InvalidParameterError(
                 "You must pass either 'orig_path', 'dest_path', and 'patterns' "
                 " OR 'payload'")
 
+
+    @property
+    def hash_type(self):
+        return self._hash_type
 
     @property
     def pdar_version(self):
@@ -175,7 +184,9 @@ creating new pdar:
                     pax_headers={
                         ARCHIVE_HEADER_VERSION: unicode(self.pdar_version),
                         ARCHIVE_HEADER_CREATED: unicode(
-                            self.created_datetime.isoformat())})
+                            self.created_datetime.isoformat()),
+                        ARCHIVE_HEADER_HASH_TYPE: unicode(self.hash_type)})
+                
                 try:
                     for patch in self.patches:
                         patch.pax_dump(tfile)

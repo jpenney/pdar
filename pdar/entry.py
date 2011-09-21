@@ -20,18 +20,17 @@ import stat
 import tarfile
 import filecmp
 
-from hashlib import sha1
+from pdar import DEFAULT_HASH_TYPE
+import hashlib
 from StringIO import StringIO
 
-__all__ = ['PDAREntry', 'PDARCopyEntry', 'PDARNewEntry',
-           'PDARMoveEntry', 'PDARDeleteEntry', 'PDARDiffEntry',
-           'EMPTY_FILE_HASH']
 
-EMPTY_FILE_HASH = sha1('').hexdigest()
+__all__ = ['PDAREntry', 'PDARCopyEntry', 'PDARNewEntry',
+           'PDARMoveEntry', 'PDARDeleteEntry', 'PDARDiffEntry' ]
 
 ENTRY_HEADER_TYPE = 'pdar_entry_type'
-ENTRY_HEADER_DEST_HASH = 'pdar_entry_dest_hash'
-ENTRY_HEADER_ORIG_HASH = 'pdar_entry_orig_hash'
+ENTRY_HEADER_DEST_DIGEST = 'pdar_entry_dest_digest'
+ENTRY_HEADER_ORIG_DIGEST = 'pdar_entry_orig_digest'
 ENTRY_HEADER_TARGET = 'pdar_entry_target'
 ENTRY_HEADER_TARGET_SOURCE = 'pdar_entry_target_source'
 
@@ -80,14 +79,25 @@ class PDAREntry(object):
     __metaclass__ = _PDAREntryMeta
 
     def __init__(self, target, payload='', mode=DEFAULT_MODE,
-                 orig_hash=EMPTY_FILE_HASH, dest_hash=EMPTY_FILE_HASH,
+                 orig_digest=None, dest_digest=None,
+                 hash_type=DEFAULT_HASH_TYPE,
                  **kwargs):
 
+        self._hash_type = hash_type
+        if orig_digest is None or dest_digest is None:
+            empty_hash = self.generate_digest('')
+            if orig_digest is None:
+                orig_digest = empty_hash
+            if dest_digest is None:
+                dest_digest = empty_hash
+        
         self._mode = mode
         self._target = target
-        self._orig_hash = orig_hash
-        self._dest_hash = dest_hash
+        self._orig_digest = orig_digest
+        self._dest_digest = dest_digest
         self._payload = payload
+
+
 
     @property
     def type_code(self):
@@ -106,26 +116,37 @@ class PDAREntry(object):
         return self._target
 
     @property
-    def orig_hash(self):
-        return self._orig_hash
+    def orig_digest(self):
+        return self._orig_digest
 
     @property
-    def dest_hash(self):
-        return self._dest_hash
+    def dest_digest(self):
+        return self._dest_digest
 
-    def _verify_hash(self, digest, data=None, path=None):
+    @property
+    def hash_type(self):
+        return self._hash_type
+
+    @classmethod
+    def _generate_digest(cls, data, hash_type):
+        return hashlib.new(hash_type, data).hexdigest()
+
+    def generate_digest(self, data):
+        return self._generate_digest(data, self.hash_type)
+
+    def _verify_digest(self, digest, data=None, path=None):
         if data is None:
             if path is None:
                 path = self.target
             with open(path, 'rb') as verify_reader:
                 data = verify_reader.read()
-        return digest == sha1(data).hexdigest()
+        return digest == self.generate_digest(data)
 
-    def verify_orig_hash(self, data=None, path=None):
-        return self._verify_hash(self.orig_hash, data, path)
+    def verify_orig_digest(self, data=None, path=None):
+        return self._verify_digest(self.orig_digest, data, path)
 
-    def verify_dest_hash(self, data=None, path=None):
-        return self._verify_hash(self.dest_hash, data, path)
+    def verify_dest_digest(self, data=None, path=None):
+        return self._verify_digest(self.dest_digest, data, path)
 
     def patch(self, path=None, data=None, patcher=None):
         if path is None:
@@ -141,12 +162,12 @@ class PDAREntry(object):
     def pax_dump_info(self, tfile, buf):
         info = tarfile.TarInfo(
             name=os.path.join(
-                self.target, self.orig_hash))
+                self.target, self.orig_digest))
         info.pax_headers.update({
                 ENTRY_HEADER_TYPE: unicode(self.type_code),
                 ENTRY_HEADER_TARGET: unicode(self.target),
-                ENTRY_HEADER_ORIG_HASH: unicode(self.orig_hash),
-                ENTRY_HEADER_DEST_HASH: unicode(self.dest_hash)})
+                ENTRY_HEADER_ORIG_DIGEST: unicode(self.orig_digest),
+                ENTRY_HEADER_DEST_DIGEST: unicode(self.dest_digest)})
         info.size = len(buf.buf)
         info.mode = self.mode
         return info
@@ -163,6 +184,9 @@ class PDAREntry(object):
         header_args = dict((
                 key.replace('pdar_entry_', ''),
                 value) for key, value in  headers.iteritems())
+        header_args = dict((
+                key.replace('pdar_',''), 
+                value) for key, value in header_args.iteritems())
         type_cls = cls.entry_class_map[headers[ENTRY_HEADER_TYPE]]
         return type_cls(
             payload=tfile.extractfile(tinfo).read(),
@@ -173,20 +197,24 @@ class PDAREntry(object):
         return stat.S_IMODE(os.stat(source_path).st_mode)
 
     @classmethod
-    def create(cls, target, orig_target, dest_target, orig_path, dest_path):
+    def create(cls, target, orig_target, dest_target, orig_path, dest_path,
+               hash_type=DEFAULT_HASH_TYPE):
         return False
 
 
 class PDAREmptyEntry(PDAREntry):
 
     def __init__(self, target, payload='', mode=DEFAULT_MODE,
-                 orig_hash='', dest_hash='', **kwargs):
+                 orig_digest='', dest_digest='', 
+                 hash_type=DEFAULT_HASH_TYPE,
+                 **kwargs):
         if payload != '':
             raise InvalidParameterError('invalid payload')
 
         super(PDAREmptyEntry, self).__init__(
-            target=target, mode=mode, orig_hash=orig_hash,
-            dest_hash=dest_hash, **kwargs)
+            target=target, mode=mode, orig_digest=orig_digest,
+            dest_digest=dest_digest, hash_type=hash_type,
+            **kwargs)
 
     @property
     def payload(self):
@@ -197,25 +225,27 @@ class PDARDeleteEntry(PDAREmptyEntry):
 
     _type_code = 'delete'
 
-    def verify_dest_hash(self, data=None, path=None):
+    def verify_dest_digest(self, data=None, path=None):
         if data:
             return False
         return True
 
     @classmethod
-    def create(cls, target, orig_target, dest_target, orig_path, dest_path):
+    def create(cls, target, orig_target, dest_target, orig_path, dest_path,
+               hash_type=DEFAULT_HASH_TYPE):
         with open(os.path.join(orig_path, orig_target), 'rb') as orig_reader:
-            orig_hash = sha1(orig_reader.read()).hexdigest()
-        return cls(target, orig_hash=orig_hash)
+            orig_digest = cls._generate_digest(orig_reader.read(), hash_type)
+        return cls(target, orig_digest=orig_digest, hash_type=hash_type)
 
 
 class PDARSourceEntry(PDAREmptyEntry):
 
     def __init__(self, target, target_source, mode=DEFAULT_MODE,
-                 orig_hash='', dest_hash='', **kwargs):
+                 orig_digest='', dest_digest='', 
+                 hash_type=DEFAULT_HASH_TYPE, **kwargs):
         super(PDARSourceEntry, self).__init__(
-            target=target, mode=mode, orig_hash=orig_hash,
-            dest_hash=dest_hash, **kwargs)
+            target=target, mode=mode, orig_digest=orig_digest,
+            dest_digest=dest_digest, hash_type=hash_type, **kwargs)
         self._target_source = target_source
 
     @property
@@ -228,7 +258,7 @@ class PDARSourceEntry(PDAREmptyEntry):
                 ENTRY_HEADER_TARGET_SOURCE: self.target_source})
         return info
 
-    def verify_orig_hash(self, data=None, path=None):
+    def verify_orig_digest(self, data=None, path=None):
         if data:
             return False
 
@@ -236,18 +266,16 @@ class PDARSourceEntry(PDAREmptyEntry):
             path = self.target
 
         return not os.path.exists(path) and \
-            self._verify_hash(self.dest_hash, path=self.target_source)
+            self._verify_digest(self.dest_digest, path=self.target_source)
 
     @classmethod
-    def create(cls, target, orig_target, dest_target, orig_path, dest_path):
+    def create(cls, target, orig_target, dest_target, orig_path, dest_path,
+               hash_type=DEFAULT_HASH_TYPE):
         with open(os.path.join(orig_path, orig_target), 'rb') as orig_reader:
-            orig_hash = sha1(orig_reader.read()).hexdigest()
+            orig_digest = cls._generate_digest(orig_reader.read(), hash_type)
 
         return cls(target,
-                   # in the case of a copy or move orig_hash is 
-                   # EMPTY_FILE_HASH but dest_hash is the original 
-                   # file's hash
-                   dest_hash=orig_hash,
+                   dest_digest=orig_digest,
                    target_source=orig_target,
                    mode=cls.read_mode(os.path.join(dest_path, dest_target)))
 
@@ -266,7 +294,7 @@ class PDARNewEntry(PDAREntry):
 
     _type_code = 'new'
 
-    def verify_orig_hash(self, data=None, path=None):
+    def verify_orig_digest(self, data=None, path=None):
         if data:
             return False
 
@@ -276,13 +304,14 @@ class PDARNewEntry(PDAREntry):
         return not os.path.exists(path)
 
     @classmethod
-    def create(cls, target, orig_target, dest_target, orig_path, dest_path):
+    def create(cls, target, orig_target, dest_target, orig_path, dest_path,
+               hash_type=DEFAULT_HASH_TYPE):
         dest_target_path = os.path.join(dest_path, dest_target)
         with open(dest_target_path, 'rb') as dest_reader:
             dest_data = dest_reader.read()
-            dest_hash = sha1(dest_data).hexdigest()
+            dest_digest = cls._generate_digest(dest_data, hash_type)
         return cls(target,
-                   dest_hash=dest_hash,
+                   dest_digest=dest_digest,
                    payload=dest_data,
                    mode=cls.read_mode(dest_target_path))
 
@@ -292,20 +321,24 @@ class PDARDiffEntry(PDAREntry):
     _type_code = 'diff'
 
     def __init__(self, target, payload='', mode=DEFAULT_MODE,
-                 orig_hash='', dest_hash='', orig_data=None,
-                 dest_data=None, **kwargs):
+                 orig_digest='', dest_digest='', orig_data=None,
+                 dest_data=None, hash_type=DEFAULT_HASH_TYPE,
+                 **kwargs):
 
         if orig_data is not None or dest_data is not None:
-            orig_hash = sha1(orig_data).hexdigest()
-            dest_hash = sha1(dest_data).hexdigest()
+            orig_digest = self._generate_digest(orig_data, hash_type)
+            dest_digest = self._generate_digest(dest_data, hash_type)
             payload = bsdiff4.diff(orig_data, dest_data)
 
         super(PDARDiffEntry, self).__init__(
             target=target, payload=payload, mode=mode,
-            orig_hash=orig_hash, dest_hash=dest_hash, **kwargs)
+            orig_digest=orig_digest, dest_digest=dest_digest, 
+            hash_type=hash_type,
+            **kwargs)
 
     @classmethod
-    def create(cls, target, orig_target, dest_target, orig_path, dest_path):
+    def create(cls, target, orig_target, dest_target, orig_path, dest_path,
+               hash_type=DEFAULT_HASH_TYPE):
         orig = os.path.join(orig_path, orig_target)
         dest = os.path.join(dest_path, dest_target)
         if not filecmp.cmp(orig, dest, False):
@@ -314,5 +347,7 @@ class PDARDiffEntry(PDAREntry):
                     return cls(
                         target, orig_data=orig_reader.read(),
                         dest_data=dest_reader.read(),
-                        mode=cls.read_mode(dest))
+                        mode=cls.read_mode(dest),
+                        hash_type=hash_type
+                        )
         return None

@@ -49,26 +49,26 @@ class ArchiveTest(tests.ArchiveTestCase):
                               "number of modified items sholud match "
                               "number of patches in pdar")
 
-    def test_0003_hash_values(self):
-        '''validate `orig_hash` does not ever match `dest_hash`'''
+    def test_0003_digest_values(self):
+        '''validate `orig_digest` does not ever match `dest_digest`'''
         for entry in self.pdarchive.patches:
-            self.assertNotEqual(entry.orig_hash, entry.dest_hash)
+            self.assertNotEqual(entry.orig_digest, entry.dest_digest)
 
-    def test_0003_hash_orig(self):
-        '''validate `orig_hash` against files'''
+    def test_0003_digest_orig(self):
+        '''validate `orig_digest` against files'''
         for entry in self.pdarchive.patches:    
-             path = os.path.join(self.orig_dir, entry.target) 
+             path = os.path.join(self.orig_dir, entry.target)              
              self.assertFileHashEqual(
-                 path, entry.orig_hash,
+                 path, entry.orig_digest, entry.hash_type,
                  'orig hash mismatch: %s (%s): %s' 
                  % (entry.target, entry.type_code, str(entry.__dict__)))
 
-    def test_0003_hash_dest(self):
-        '''validate `dest_hash` against files'''
+    def test_0003_digest_dest(self):
+        '''validate `dest_digest` against files'''
         for entry in self.pdarchive.patches:
             path = os.path.join(self.mod_dir, entry.target)
             self.assertFileHashEqual(
-                path, entry.dest_hash,
+                path, entry.dest_digest, entry.hash_type,
                 'dest hash mismatch: %s (%s): %s' 
                 % (entry.target, entry.type_code, str(entry.__dict__)))
 
@@ -115,19 +115,19 @@ class LoadedArchiveFileTest(tests.ArchiveFileTestCase):
             [entry.target for entry in self.loaded_pdarchive.patches],
             [entry.target for entry in self.pdarchive.patches])
 
-    def test_0003_orig_hashes(self):
-        '''Compare `orig_hash` values for each entry'''
+    def test_0003_orig_digests(self):
+        '''Compare `orig_digest` values for each entry'''
 
         self.assertItemsEqual(
-            [entry.orig_hash for entry in self.loaded_pdarchive.patches],
-            [entry.orig_hash for entry in self.pdarchive.patches])
+            [entry.orig_digest for entry in self.loaded_pdarchive.patches],
+            [entry.orig_digest for entry in self.pdarchive.patches])
         
-    def test_0003_dest_hashes(self):
-        '''Compare `dest_hash` values for each entry'''
+    def test_0003_dest_digests(self):
+        '''Compare `dest_digest` values for each entry'''
 
         self.assertItemsEqual(
-            [entry.dest_hash for entry in self.loaded_pdarchive.patches],
-            [entry.dest_hash for entry in self.pdarchive.patches])
+            [entry.dest_digest for entry in self.loaded_pdarchive.patches],
+            [entry.dest_digest for entry in self.pdarchive.patches])
 
     def test_0004_apply_archive(self):
         '''Apply loaded pdar file and validate results

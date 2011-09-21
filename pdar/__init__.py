@@ -15,6 +15,7 @@
 # limitations under the License.
 
 PDAR_VERSION = '1.0'
+DEFAULT_HASH_TYPE = 'sha1'  #backwards compat
 
 from pdar.errors import *
 from pdar.patcher import *

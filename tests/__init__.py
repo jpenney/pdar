@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import unittest2
-from hashlib import sha1
+import hashlib
 from tempfile import mkstemp, mkdtemp
 import os
 import random
@@ -34,9 +34,9 @@ class TestCase(unittest2.TestCase):
         for item in first:
             self.assertNotIn(item, second, msg)
             
-    def assertFileHashEqual(self, path, hsh, msg=None):
-        if hsh == '':
-            hsh=pdar.EMPTY_FILE_HASH
+    def assertFileHashEqual(self, path, digest, hash_type, msg=None):
+        if digest == '':
+            digest = hashlib.new(hash_type,'').hexdigest()
         data = ''
         if os.path.exists(path):
             with open(path, 'rb') as datafile:
@@ -44,12 +44,12 @@ class TestCase(unittest2.TestCase):
         msg = self._formatMessage(
             msg, "hash mismatch on '%s'" 
             % path)
-        self.assertEqual(sha1(data).hexdigest(), 
-                         hsh, msg)
+        self.assertEqual(hashlib.new(hash_type,data).hexdigest(), 
+                         digest, msg)
 
-    def assertFileHashNotEqual(self, path, hsh, msg=None):
-        if hsh == '':
-            hsh=pdar.EMPTY_FILE_HASH
+    def assertFileHashNotEqual(self, path, digest, hash_type, msg=None):
+        if digest == '':
+            digest = hashlib.new(hash_type,'').hexdigest()
         data = ''
         if os.path.exists(path):
             with open(path, 'rb') as datafile:
@@ -57,8 +57,8 @@ class TestCase(unittest2.TestCase):
         msg = self._formatMessage(
             msg, "unexpected hash match on '%s'" 
             % path)
-        self.assertNotEqual(sha1(data).hexdigest(),
-                            hsh, msg)
+        self.assertNotEqual(hashlib.new(hash_type,data).hexdigest(), 
+                            digest, msg)
         
 
 
