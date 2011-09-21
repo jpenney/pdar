@@ -19,6 +19,7 @@ import re
 import os
 import tarfile
 import logging
+import filecmp
 
 from datetime import datetime
 from gzip import GzipFile
@@ -26,7 +27,7 @@ from tempfile import SpooledTemporaryFile
 from pkg_resources import parse_version
 
 from pdar.errors import *
-from pdar.entry import PDEntry
+from pdar.entry import *
 from pdar.patcher import DEFAULT_PATCHER_TYPE
 from pdar import PDAR_VERSION
 
@@ -41,43 +42,114 @@ ARCHIVE_HEADER_CREATED = 'pdar_created_datetime'
 
 class PDArchive(object):
 
-    def __init__(self, orig_dir, dest_dir, patterns=['*'], payload=None):
-        if orig_dir and dest_dir and patterns and not payload:
+    def __init__(self, orig_path, dest_path, patterns=['*'], payload=None):
+        if orig_path and dest_path and patterns and not payload:
             logging.debug("""\
 creating new pdar:
-  orig_dir: %s
-  dest_dir: %s
-  patterns: %s""" % (orig_dir, dest_dir, str(patterns)))
+  orig_path: %s
+  dest_path: %s
+  patterns: %s""" % (orig_path, dest_path, str(patterns)))
             self._patches = []
             pattern_re = r'|'.join([
                     fnmatch.translate(pat) for pat in patterns])
             pattern_re = re.compile(pattern_re)
 
-            for root, dirs, files in os.walk(dest_dir):
-                for dest in (
-                    os.path.normcase(
-                        os.path.join(root, f)) for f in files \
-                        if pattern_re.match(f)):
-                    target = os.path.relpath(dest, dest_dir)
-                    orig = os.path.normcase(os.path.join(orig_dir, target))
-                    patch_entry = PDEntry.create(target, orig, dest)
-                    if patch_entry:
-                        logging.info("adding delta for: %s" % target)
-                        self._patches.append(patch_entry)
-                    else:
-                        logging.debug("unchanged file: %s" % target)
+            def target_gen(path):
+                for root, dirs, files in os.walk(path):
+                    for dest in (
+                        os.path.normcase(
+                            os.path.join(root, f)) for f in files \
+                            if pattern_re.match(f)):
+                        yield os.path.relpath(dest, path)
+
+            from pprint import pprint
+
+            orig_targets = set(target_gen(orig_path))
+            dest_targets = set(target_gen(dest_path))
+
+            common_targets = [
+                (target, target, target) for target in (
+                    orig_targets & dest_targets)]
+            moved_targets = []
+            deleted_targets = []
+            new_targets = []
+            copied_targets = []
+
+            orig_only = orig_targets - dest_targets
+            dest_only = dest_targets - orig_targets
+
+            source_match = {}
+            for target in dest_only:
+                matched = False
+                dest_target_path = os.path.join(dest_path, target)
+                for potential_match in orig_targets:
+                    if filecmp.cmp(dest_target_path,
+                                   os.path.join(orig_path, potential_match)):
+                        source_match.setdefault(potential_match, [])
+                        source_match[potential_match].append(target)
+                        matched = True
+                        break
+                if not matched:
+                    new_targets.append((target, None, target))
+
+            matched = source_match.keys()
+            for target in orig_only:
+                if target not in matched:
+                    deleted_targets.append((target, target, None))
+
+            for source, matches in source_match.iteritems():
+                move_match = None
+
+                # does this path still exist in dest
+                if source not in dest_targets:
+                    move_match = matches[-1]
+                    matches = matches[:-1]
+
+                for target in matches:
+                    copied_targets.append((target, source, target))
+                    
+                if move_match:
+                    target = move_match
+                    moved_targets.append((target, source, target))
+
+            def add_entry(targets, cls):
+                args = list(targets)
+                args += [ orig_path, dest_path ]
+                entry = cls.create(*args)
+                if entry:
+                    logging.info("adding '%s' entry for: %s" 
+                                 % (entry.type_code, entry.target))
+                    self._patches.append(entry)
+                else:
+                    logging.debug("unchanged file: %s" % target[0])
+
+            for target in copied_targets:
+                add_entry(target, PDARCopyEntry)
+
+            for target in moved_targets:
+                add_entry(target, PDARMoveEntry)
+
+            for target in common_targets:
+                add_entry(target, PDARDiffEntry)
+
+            for target in deleted_targets:
+                add_entry(target, PDARDeleteEntry)
+
+            for target in new_targets:
+                add_entry(target, PDARNewEntry)
 
             self._pdar_version = PDAR_VERSION
             self._created_datetime = datetime.utcnow()
-        elif payload and not orig_dir and not dest_dir:
+        elif payload and not orig_path and not dest_path:
             self._patches = payload['patches']
             self._pdar_version = payload[ARCHIVE_HEADER_VERSION]
             self._created_datetime = payload[ARCHIVE_HEADER_CREATED]
 
         else:
             raise InvalidParameterError(
-                "You must pass either 'orig_dir', 'dest_dir', and 'patterns' "
+                "You must pass either 'orig_path', 'dest_path', and 'patterns' "
                 " OR 'payload'")
+
 
     @property
     def pdar_version(self):
@@ -155,7 +227,7 @@ creating new pdar:
 
                 data = tfile.next()
                 while data:
-                    patch = PDEntry.pax_load(tfile, data)
+                    patch = PDAREntry.pax_load(tfile, data)
                     patches.append(patch)
                     data = tfile.next()
             finally:
@@ -169,5 +241,5 @@ creating new pdar:
             #         "This verion of pdar only supports up to %s."
             #         % (patch.pdar_version, PDAR_VERSION))
             # return patch
-            return cls(orig_dir=None, dest_dir=None, patterns=None,
+            return cls(orig_path=None, dest_path=None, patterns=None,
                        payload=payload)

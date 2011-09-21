@@ -25,8 +25,8 @@ import locale
 import shutil
 
 def pdar_create(args):
-    archive = pdar.PDArchive(orig_dir=args.path1, 
-                             dest_dir=args.path2, 
+    archive = pdar.PDArchive(orig_path=args.path1, 
+                             dest_path=args.path2, 
                              patterns=args.patterns)
     if args.backup:
         if os.path.exists(args.archive_name):
@@ -185,7 +185,10 @@ def pdar_cmd():
 
     logging.basicConfig(format="%(message)s",
                         level=args.log_level)
-        
+    
+    if args.log_level == logging.DEBUG:
+        parser.exit(args.func(args))
+
     try:
         parser.exit(args.func(args))
     except pdar.errors.InternalError, err:
