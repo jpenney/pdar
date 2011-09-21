@@ -21,7 +21,6 @@ import pdar
 import os
 import random
 import shutil
-import filecmp
 
 from pkg_resources import parse_version
 
@@ -57,19 +56,21 @@ class ArchiveTest(tests.ArchiveTestCase):
 
     def test_0003_hash_orig(self):
         '''validate `orig_hash` against files'''
-        for entry in self.pdarchive.patches:
-            path = os.path.join(self.orig_dir, entry.target)
-            if entry.orig_hash == pdar.NEW_FILE_HASH:
-                self.assertTrue(not os.path.exists(path),
-                                "new files should not already exist")
-            else:
-                self.assertFileHashEqual(path, entry.orig_hash)
+        for entry in self.pdarchive.patches:    
+             path = os.path.join(self.orig_dir, entry.target) 
+             self.assertFileHashEqual(
+                 path, entry.orig_hash,
+                 'orig hash mismatch: %s (%s): %s' 
+                 % (entry.target, entry.type_code, str(entry.__dict__)))
 
     def test_0003_hash_dest(self):
         '''validate `dest_hash` against files'''
         for entry in self.pdarchive.patches:
             path = os.path.join(self.mod_dir, entry.target)
-            self.assertFileHashEqual(path, entry.dest_hash)
+            self.assertFileHashEqual(
+                path, entry.dest_hash,
+                'dest hash mismatch: %s (%s): %s' 
+                % (entry.target, entry.type_code, str(entry.__dict__)))
 
     def test_0004_apply_archive(self):
         '''Apply in memory pdar and validate results

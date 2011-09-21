@@ -34,7 +34,7 @@ class BaseErrorHandler(object):
     def handle_archive(self, patcher, archive, err):
         raise err
 
-    def handle_entry(self, patcher, entry, data, err):
+    def handle_entry(self, patcher, entry, target, data, err):
         raise err
 
 
@@ -63,13 +63,21 @@ class BasePatcher(object):
         self.error_handler.handle_archive(self, archive, err)
 
     def apply_entry_error_handler(self, entry, target, data, err):
-        self.error_handler.handle_entry(self, entry, data, err)
+        self.error_handler.handle_entry(self, entry, target, data, err)
 
     def _do_apply_archive(self):
         raise NotImplementedError()
 
     def _do_apply_entry(self, entry, target, data):
-        raise NotImplementedError()
+        func = getattr(self, 'apply_entry_%s' % entry.type_code, 
+                       None)
+        if func is None:
+            raise NotImplementedError(
+                "Patcher '%s' does not support entries of type '%s'"
+                % (self.__class__.__name__, entry.type_code))
+        
+        return func(entry, target, data)
+
 
     def apply_archive(self):
         self._do_apply_archive()
@@ -99,10 +107,11 @@ class PDArchiveHandler(BaseErrorHandler):
 
         raise err
 
-    def handle_entry(self, patcher, entry, data, err):
-        if isinstance(err, IOError) and err.errno == errno.ENOENT:
-            logging.warn("%s: %s", err.strerror, err.filename)
-            return
+    def handle_entry(self, patcher, entry, target, data, err):
+        #if isinstance(err, IOError) and err.errno == errno.ENOENT:
+        #    logging.warn("%s: %s", err.strerror, err.filename)
+        #    logging.debug(str(err))
+        #    return
         logging.error(
                 "Unhandled error encountered while applying delta to '%s':"
                 "\n  %s",
@@ -125,6 +134,7 @@ class PDArchivePatcher(BasePatcher):
             targets[entry.target].append(entry)
         self._targets = dict(targets)
         self._backups = {}
+        self._to_unlink = []
 
     @property
     def targets(self):
@@ -134,6 +144,10 @@ class PDArchivePatcher(BasePatcher):
     def backups(self):
         return self._backups
 
+    @property
+    def to_unlink(self):
+        return self._to_unlink
+
     def _do_apply_archive(self):
         orig_path = os.getcwd()
         try:
@@ -142,14 +156,19 @@ class PDArchivePatcher(BasePatcher):
             for target, entries in self.targets.iteritems():
                 for entry in entries:
                     entry.patch(patcher=self)
+
+            for target in self.to_unlink:
+                os.unlink(target)
         finally:
             os.chdir(orig_path)
 
+        logging.debug('cleaning up unused backup files')
         for dummy, path in self.backups.iteritems():
-            try:
-                os.unlink(path)
-            except IOError:
-                pass
+            if path:
+                try:
+                    os.unlink(path)
+                except IOError:
+                    pass
 
     def _do_apply_entry(self, entry, path, data):
         if not entry.verify_orig_hash(data):
@@ -161,32 +180,40 @@ class PDArchivePatcher(BasePatcher):
                 raise SourceFileError(
                     "original file does not contain expected data: %s"
                     % entry.target)
-        logging.info("patching %s", entry.target)
-        data = bsdiff4.patch(data, entry.delta)
-        if not entry.verify_dest_hash(data):
+        logging.debug("patching %s", entry.target)
+
+        new_data = super(PDArchivePatcher, self)._do_apply_entry(
+            entry, path, data)
+
+        if not entry.verify_dest_hash(new_data):
             raise PatchedFileError(
                 "patched file does not contain expected data: %s"
                 % entry.target)
-        if not entry.isnewfile:
+
+        exists = os.path.exists(path)
+        tmp_path = None
+        if exists:
             orig_mode = stat.S_IMODE(os.stat(path).st_mode)
-        fd, tmp_path = mkstemp()
-        os.close(fd)
+            fd, tmp_path = mkstemp()
+            os.close(fd)
+
         backup_created = False
         try:
-            if not entry.isnewfile:
+            if exists:
                 shutil.copy(path, tmp_path)
-
+            
                 if not os.access(path, os.W_OK):
                     os.chmod(path, stat.S_IREAD | stat.S_IWRITE | orig_mode)
+
             backup_created = True
             try:
                 with open(path, 'wb') as writer:
                     logging.info("writing data to %s", path)
-                    writer.write(data)
+                    writer.write(new_data)
                 os.chmod(path, entry.mode)
             except Exception, err:
-                if entry.isnewfile:
-                    logging.error("ERROR: %s\nremoving newly created file: %s",
+                if not exists:
+                    logging.error("%s\nremoving new file: %s",
                                   str(err), path)
                     os.unlink(path)
                 else:
@@ -197,10 +224,31 @@ class PDArchivePatcher(BasePatcher):
 
         finally:
             if backup_created and not entry.target in self.backups:
-                if entry.isnewfile:
-                    if not os.path.exists(path):
-                        self.backups[entry.target] = None
-                else:
-                    self.backups[entry.target] = tmp_path
+                self.backups[entry.target] = tmp_path
+        
+        
+    def apply_entry_copy(self, entry, path, data):
+        shutil.copy(entry.target_source, path)
+        data = ''
+        with open(path, 'rb') as reader:
+            data = reader.read()
+        return data
+
+    def apply_entry_move(self, entry, path, data):
+        new_data = self.apply_entry_copy(entry, path, data)
+        self.to_unlink.append(entry.target_source)
+        return new_data
+
+    def apply_entry_delete(self, entry, path, data):
+        if path is None:
+            path = entry.target
+        self.to_unlink.append(path)
+        return ''
+
+    def apply_entry_new(self, entry, path, data):
+        return entry.payload
+        
+    def apply_entry_diff(self, entry, path, data):
+        return bsdiff4.patch(data, entry.payload)       
 
 DEFAULT_PATCHER_TYPE = PDArchivePatcher

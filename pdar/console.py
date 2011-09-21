@@ -25,8 +25,8 @@ import locale
 import shutil
 
 def pdar_create(args):
-    archive = pdar.PDArchive(orig_dir=args.path1, 
-                             dest_dir=args.path2, 
+    archive = pdar.PDArchive(orig_path=args.path1, 
+                             dest_path=args.path2, 
                              patterns=args.patterns)
     if args.backup:
         if os.path.exists(args.archive_name):
@@ -68,14 +68,17 @@ PDAR version: %(pdar_version)s
     archive = pdar.PDArchive.load(args.archive_name)
 
     entry_info = [
-        (locale.format("%d", len(entry.delta), grouping=True),
-         entry.target) for entry in archive.patches]
+        (locale.format("%d", len(entry.payload), grouping=True),
+         entry.target, entry.type_code) for entry in archive.patches]
 
     max_size_str_width = max(len(info[0]) for info in entry_info)
     max_target_str_width = max(len(info[1]) for info in entry_info)
+    max_type_str_width = max(len(info[2]) for info in entry_info)
 
-    _pdar_entry_line_format = '  %s%ds  %ss' % (
-        '%(size)', max_size_str_width, '%(target)'
+    _pdar_entry_line_format = '  %s%ds  %s%ds  %ss' % (
+        '%(type)', max_type_str_width,
+        '%(size)', max_size_str_width, 
+        '%(target)'
         )
         
     print _pdar_info_header % {
@@ -85,17 +88,21 @@ PDAR version: %(pdar_version)s
         'archive_size': locale.format("%d", archive_size, grouping=True)}
 
     print _pdar_entry_line_format % {
+        'type': 'type',
         'size': 'size',
         'target': 'target'}
 
     print _pdar_entry_line_format % {
+        'type': '-' * max_type_str_width,
         'size': '-' * max_size_str_width,
         'target': '-' * max_target_str_width }
 
-    for entry in entry_info:
+    for entry in sorted(entry_info, 
+                        key=lambda ent: ent[1]):
         print _pdar_entry_line_format % {
             'size': entry[0],
-            'target': entry[1]}
+            'target': entry[1],
+            'type': entry[2]}
     
     return 0
         
@@ -185,7 +192,10 @@ def pdar_cmd():
 
     logging.basicConfig(format="%(message)s",
                         level=args.log_level)
-        
+    
+    if args.log_level == logging.DEBUG:
+        parser.exit(args.func(args))
+
     try:
         parser.exit(args.func(args))
     except pdar.errors.InternalError, err:
