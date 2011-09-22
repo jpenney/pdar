@@ -15,6 +15,7 @@
 # limitations under the License.
 
 PDAR_VERSION = '1.0'
+DEFAULT_HASH_TYPE = 'sha1'  #backwards compat
 
 from pdar.errors import *
 from pdar.patcher import *
@@ -29,7 +30,7 @@ __copyright__ = 'Copyright 2011, Jason Penney'
 __license__ = 'Apache License, Version 2.0'
 __credits__ = ['Jason Penney']
 __maintainer__ = 'Jason Penney'
-__version__ = '0.5.0b'
+__version__ = '0.9.0b'
 __url__ = 'http://github.com/jpenney/pdar'
 __description__ = 'Portable Delta ARchives'
 __long_description__ = '''

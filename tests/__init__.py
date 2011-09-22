@@ -15,13 +15,14 @@
 # limitations under the License.
 
 import unittest2
-from hashlib import sha1
+import hashlib
 from tempfile import mkstemp, mkdtemp
 import os
 import random
 import shutil
 import pdar
 import filecmp
+import logging
 
 class TestCase(unittest2.TestCase):
     
@@ -33,15 +34,31 @@ class TestCase(unittest2.TestCase):
         for item in first:
             self.assertNotIn(item, second, msg)
             
-    def assertFileHashEqual(self, path, hash, msg=None):
-        with open(path, 'rb') as datafile:
-            self.assertEqual(sha1(datafile.read()).hexdigest(), 
-                             hash, msg)
+    def assertFileHashEqual(self, path, digest, hash_type, msg=None):
+        if digest == '':
+            digest = hashlib.new(hash_type,'').hexdigest()
+        data = ''
+        if os.path.exists(path):
+            with open(path, 'rb') as datafile:
+                data = datafile.read()
+        msg = self._formatMessage(
+            msg, "hash mismatch on '%s'" 
+            % path)
+        self.assertEqual(hashlib.new(hash_type,data).hexdigest(), 
+                         digest, msg)
 
-    def assertFileHashNotEqual(self, path, hash, msg=None):
-        with open(path, 'rb') as datafile:
-            self.assertNotEqual(sha1(datafile.read()).hexdigest(),
-                                hash, msg)
+    def assertFileHashNotEqual(self, path, digest, hash_type, msg=None):
+        if digest == '':
+            digest = hashlib.new(hash_type,'').hexdigest()
+        data = ''
+        if os.path.exists(path):
+            with open(path, 'rb') as datafile:
+                data = datafile.read()
+        msg = self._formatMessage(
+            msg, "unexpected hash match on '%s'" 
+            % path)
+        self.assertNotEqual(hashlib.new(hash_type,data).hexdigest(), 
+                            digest, msg)
         
 
 
@@ -101,11 +118,30 @@ class DataSetTestCase(TestCase):
         cls._diff_files = cls._gen_files(cls._orig_dir, "%04d.diff")
         cls._append_files = cls._gen_files(cls._orig_dir, "%04d.append")
         cls._mod_files = cls._gen_files(cls._orig_dir, "%04d.mod")
+        cls._moved_files = cls._gen_files(cls._orig_dir, "%04d.moved")
 
         shutil.copytree(cls._orig_dir, cls._mod_dir)
+        dircmp = filecmp.dircmp(cls._orig_dir, cls._mod_dir)
+        if not set(dircmp.left_list) == set(dircmp.right_list) == \
+                set(dircmp.common):
+            raise RuntimeError("error setting up data set")
         
-
+        cls._deleted_files = cls._gen_files(cls._orig_dir, "%04d.delete")
         cls._new_files = cls._gen_files(cls._mod_dir, "%04d.new")
+
+        # rename "moved" files
+        for fname in cls.files_to_paths(cls._moved_files, cls._orig_dir):
+            fname_fix = fname.replace('moved', 'move')
+            logging.debug("moving '%s' -> '%s'", fname, fname_fix)
+            shutil.move(fname, fname_fix)
+        # copy same files and moved files
+        cls._copied_files = []
+        for fname in list(
+            cls.files_to_paths(cls._same_files, cls._mod_dir)) + \
+            list(cls.files_to_paths(cls._moved_files, cls._mod_dir)):
+            dest_fname = fname + '.copied'
+            shutil.copy(fname, dest_fname)
+            cls._copied_files.append(os.path.relpath(dest_fname, cls._mod_dir))
 
         # replace diff files
         #for fname in cls.files_to_paths(cls._diff_files, cls._mod_dir):
@@ -176,14 +212,30 @@ class DataSetTestCase(TestCase):
     def mod_files(self):
         return self._mod_files
 
+    @property 
+    def moved_files(self):
+        return self._moved_files
+
+    @property
+    def copied_files(self):
+        return self._copied_files
+
     @property
     def new_files(self):
         return self._new_files
 
     @property
+    def deleted_files(self):
+        return self._deleted_files
+
+    @property
     def changed_files(self):
+        return self.changed_dest_files + self.deleted_files
+
+    @property
+    def changed_dest_files(self):
         return self.diff_files + self.append_files + self.mod_files + \
-            self.new_files
+            self.new_files + self.moved_files + self.copied_files
 
 class ArchiveTestCase(DataSetTestCase):
 
@@ -196,19 +248,12 @@ class ArchiveTestCase(DataSetTestCase):
         patch_dir = os.path.join(self.workdir, 'patch_dir')
         shutil.copytree(self.orig_dir, patch_dir)
         self.addCleanup(shutil.rmtree, patch_dir)
-
         pdarchive.patch(patch_dir)
-        all_files = self.same_files + self.changed_files
-        match, mismatch, errors = filecmp.cmpfiles(
-            self.mod_dir, patch_dir, all_files)
 
-        self.assertEqual(len(mismatch), 0, 
-                         'filecmp.cpmfiles should return no mismatches')
-        self.assertEqual(len(errors), 0, 
-                         'filecmp.cmpfiles should return no errors')
-
-        self.assertItemsEqual(match, all_files,
-                              'filecmp.cpmfiles should match all files')
+        dircmp = filecmp.dircmp(self._mod_dir, patch_dir)
+        self.assertItemsEqual(dircmp.left_list, dircmp.right_list,
+                              'filecmp.dircmp left_list should match '
+                              'right_list')
 
     @property
     def pdarchive(self):
