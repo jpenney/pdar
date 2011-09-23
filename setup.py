@@ -19,10 +19,25 @@
 """setup.py for pdar"""
 
 from setuptools import setup, find_packages
+import distutils
 import os
 import sys
 import imp
 import re
+
+if sys.version_info < (2,6):
+    print "Python 2.6 or greater required"
+    sys.exit(1)
+
+
+py2exe = None
+
+if True or sys.platform == 'win32':
+    try:
+        import py2exe
+    except ImportError:
+        print "WARNING: py2exe is not available. '.exe' creation disabled."
+        py2exe = None
 
 _pkgname = 'pdar'
 
@@ -68,7 +83,31 @@ def get_meta(pkgname, path='.'):
 
 extra = {}
 if sys.version_info >= (3,):
-    extra['use_2to3'] = True
+    extra.update({'use_2to3': True})
+
+if py2exe:
+    script_path = os.path.join('build', 'py2exe', 'scripts', 'winpdar.py')
+    distutils.dir_util.mkpath(os.path.dirname(script_path))
+    with open(script_path,'w') as script_file:
+        script_file.write('''\
+import sys
+import pdar.console
+
+if __name__ == "__main__":
+    sys.exit(pdar.console.pdar_cmd())
+''')
+    extra.setdefault('options',{})
+    extra['options'].update({
+            'py2exe': {
+                'optimize': 2,   
+                'bundle_files': 1,
+                'dist_dir': os.path.join('dist', 'py2exe'),
+                }})
+    extra.update({'zipfile': None,
+                  'console': [{'script': script_path,
+                               'dest_base': 'pdar'}]})
+
+
 
 meta = get_meta(_pkgname)
 
