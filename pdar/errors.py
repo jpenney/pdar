@@ -15,31 +15,38 @@
 # limitations under the License.
 
 __all__ = [
-    'PDARError', 'InvalidParameterError', 'FileError', 
+    'PDARError', 'InvalidParameterError', 'FileError',
     'UnsupportedArchiveError', 'SourceFileError',
-    'PatchedFileError', 'PDArchiveFormatError' ]
+    'PatchedFileError', 'PDArchiveFormatError']
+
 
 class PDARError(RuntimeError):
     pass
 
+
 class InternalError(PDARError):
     pass
+
 
 class InvalidParameterError(InternalError):
     pass
 
+
 class FileError(PDARError):
     pass
+
 
 class UnsupportedArchiveError(FileError):
     pass
 
+
 class SourceFileError(FileError):
     pass
+
 
 class PatchedFileError(FileError):
     pass
 
+
 class PDArchiveFormatError(FileError):
     pass
-

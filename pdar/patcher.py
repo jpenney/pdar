@@ -14,22 +14,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pdar.errors import *
+from tempfile import mkstemp
 import bsdiff4
+import errno
 import logging
 import os
-import stat
 import shutil
-import errno
-
-from tempfile import mkstemp
-from pdar.errors import *
-
+import stat
 
 __all__ = [
     'PDArchivePatcher', 'DEFAULT_PATCHER_TYPE']
 
 
 class BaseErrorHandler(object):
+
+    # pylint: disable=W0613,R0201
 
     def handle_archive(self, patcher, archive, err):
         raise err
@@ -38,7 +38,7 @@ class BaseErrorHandler(object):
         raise err
 
 
-class BasePatcher(object):
+class BasePatcher(object):  # pylint: disable=R0922
 
     def __init__(self, archive, path, error_handler=None):
         self._archive = archive
@@ -69,15 +69,14 @@ class BasePatcher(object):
         raise NotImplementedError()
 
     def _do_apply_entry(self, entry, target, data):
-        func = getattr(self, 'apply_entry_%s' % entry.type_code, 
+        func = getattr(self, 'apply_entry_%s' % entry.type_code,
                        None)
         if func is None:
             raise NotImplementedError(
                 "Patcher '%s' does not support entries of type '%s'"
                 % (self.__class__.__name__, entry.type_code))
-        
-        return func(entry, target, data)
 
+        return func(entry, target, data)
 
     def apply_archive(self):
         self._do_apply_archive()
@@ -194,14 +193,14 @@ class PDArchivePatcher(BasePatcher):
         tmp_path = None
         if exists:
             orig_mode = stat.S_IMODE(os.stat(path).st_mode)
-            fd, tmp_path = mkstemp()
-            os.close(fd)
+            dummy, tmp_path = mkstemp()
+            os.close(dummy)
 
         backup_created = False
         try:
             if exists:
                 shutil.copy(path, tmp_path)
-            
+
                 if not os.access(path, os.W_OK):
                     os.chmod(path, stat.S_IREAD | stat.S_IWRITE | orig_mode)
 
@@ -225,11 +224,16 @@ class PDArchivePatcher(BasePatcher):
         finally:
             if backup_created and not entry.target in self.backups:
                 self.backups[entry.target] = tmp_path
-        
-        
+
+    def _verify_dest_dir(self, path):
+        parent = os.path.dirname(path)
+        if not os.path.exists(parent):
+            os.makedirs(parent)
+
+    # pylint: disable=W0613,R0201
     def apply_entry_copy(self, entry, path, data):
+        self._verify_dest_dir(path)
         shutil.copy(entry.target_source, path)
-        data = ''
         with open(path, 'rb') as reader:
             data = reader.read()
         return data
@@ -246,9 +250,11 @@ class PDArchivePatcher(BasePatcher):
         return ''
 
     def apply_entry_new(self, entry, path, data):
+        self._verify_dest_dir(path)
         return entry.payload
-        
-    def apply_entry_diff(self, entry, path, data):
-        return bsdiff4.patch(data, entry.payload)       
 
+    def apply_entry_diff(self, entry, path, data):
+        return bsdiff4.patch(data, entry.payload)
+
+    # pylint: disable=W0613,R0201
 DEFAULT_PATCHER_TYPE = PDArchivePatcher

@@ -17,16 +17,17 @@
 # limitations under the License.
 
 import argparse
+import locale
+import logging
+import os
 import pdar
 import pdar.errors
-import os
-import logging
-import locale
 import shutil
 
+
 def pdar_create(args):
-    archive = pdar.PDArchive(orig_path=args.path1, 
-                             dest_path=args.path2, 
+    archive = pdar.PDArchive(orig_path=args.path1,
+                             dest_path=args.path2,
                              patterns=args.patterns)
     if args.backup:
         if os.path.exists(args.archive_name):
@@ -34,13 +35,14 @@ def pdar_create(args):
             logging.debug("creating backup of '%s' -> '%s'" % (
                     args.archive_name, backup_name))
             args.force = True
-            shutil.copy(args.archive_name, 
+            shutil.copy(args.archive_name,
                         '.'.join([args.archive_name, 'bak']))
     logging.debug("saving archive: %s" % args.archive_name)
     archive.save(args.archive_name, args.force)
     logging.debug("Success!")
     return 0
-    
+
+
 def pdar_apply(args):
     archive = pdar.PDArchive.load(args.archive_name)
     if args.output_path:
@@ -54,8 +56,6 @@ def pdar_apply(args):
     archive.patch(path)
     return 0
 
-    
-         
 
 def pdar_info(args):
     _pdar_info_header = '''\
@@ -77,10 +77,9 @@ PDAR version: %(pdar_version)s
 
     _pdar_entry_line_format = '  %s%ds  %s%ds  %ss' % (
         '%(type)', max_type_str_width,
-        '%(size)', max_size_str_width, 
-        '%(target)'
-        )
-        
+        '%(size)', max_size_str_width,
+        '%(target)')
+
     print _pdar_info_header % {
         'archive_name': args.archive_name,
         'pdar_version': archive.pdar_version,
@@ -95,23 +94,22 @@ PDAR version: %(pdar_version)s
     print _pdar_entry_line_format % {
         'type': '-' * max_type_str_width,
         'size': '-' * max_size_str_width,
-        'target': '-' * max_target_str_width }
+        'target': '-' * max_target_str_width}
 
-    for entry in sorted(entry_info, 
+    for entry in sorted(entry_info,
                         key=lambda ent: ent[1]):
         print _pdar_entry_line_format % {
             'size': entry[0],
             'target': entry[1],
             'type': entry[2]}
-    
+
     return 0
-        
 
 
 def pdar_cmd():
 
     if locale.getlocale() == (None, None):
-        locale.setlocale(locale.LC_ALL,'')
+        locale.setlocale(locale.LC_ALL, '')
 
     parser = argparse.ArgumentParser(
         description='utility for manipulating portable delta archives')
@@ -143,7 +141,7 @@ def pdar_cmd():
             'backup existing archive before overwriting '
             '(implies force, existing backups may be lost).'),
         dest='backup', action='store_true')
-                        
+
     parser_create.add_argument(
         'archive_name',
         help='path to output pdar archive')
@@ -162,8 +160,7 @@ def pdar_cmd():
     parser_apply = subparsers.add_parser(
         'apply',
         description='apply pdar archive as patch',
-        help='apply pdar archive as patch'
-        )
+        help='apply pdar archive as patch')
     parser_apply.set_defaults(func=pdar_apply)
     parser_apply.add_argument(
         '-o', '--output-path',
@@ -176,7 +173,7 @@ def pdar_cmd():
     parser_apply.add_argument(
         'path',
         help='path to which pdar will be applied')
-    
+
     parser_info = subparsers.add_parser(
         'info',
         description='show info about pdar archive',
@@ -187,12 +184,12 @@ def pdar_cmd():
         help='path to output pdar archive')
 
     args = parser.parse_args()
-    
+
     # configure logging
 
     logging.basicConfig(format="%(message)s",
                         level=args.log_level)
-    
+
     if args.log_level == logging.DEBUG:
         parser.exit(args.func(args))
 
@@ -205,6 +202,3 @@ def pdar_cmd():
     except Exception, err:
         logging.error(str(err))
         parser.exit(1)
-
-
-    
