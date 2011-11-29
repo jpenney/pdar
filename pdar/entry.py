@@ -21,12 +21,12 @@ import tarfile
 import filecmp
 
 from pdar import DEFAULT_HASH_TYPE
+from pdar.errors import InvalidParameterError
 import hashlib
 from StringIO import StringIO
 
-
 __all__ = ['PDAREntry', 'PDARCopyEntry', 'PDARNewEntry',
-           'PDARMoveEntry', 'PDARDeleteEntry', 'PDARDiffEntry' ]
+           'PDARMoveEntry', 'PDARDeleteEntry', 'PDARDiffEntry']
 
 ENTRY_HEADER_TYPE = 'pdar_entry_type'
 ENTRY_HEADER_DEST_DIGEST = 'pdar_entry_dest_digest'
@@ -42,21 +42,22 @@ DEFAULT_MODE = 0700 & ~DEFAULT_MODE
 class _PDAREntryMeta(type):
 
     @property
-    def type_code(cls):
-        return getattr(cls, '_type_code')
+    def type_code(mcs):  # @NoSelf
+        return getattr(mcs, '_type_code')
 
     @property
-    def creatable(cls):
+    def creatable(mcs):  # @NoSelf
         try:
-            cls.type_code
-            return True
+            if mcs.type_code:
+                return True
         except AttributeError:
-            return False
+            pass
+        return False
 
     _entry_classes = None
 
     @property
-    def entry_class_map(cls):
+    def entry_class_map(mcs):  # @NoSelf
         if _PDAREntryMeta._entry_classes is None:
 
             def _entry_subclasses(subclasses):
@@ -71,13 +72,14 @@ class _PDAREntryMeta(type):
             for class_ in set(_entry_subclasses([PDAREntry])):
                 _PDAREntryMeta._entry_classes[class_.type_code] = class_
 
-        return cls._entry_classes
+        return mcs._entry_classes
 
 
 class PDAREntry(object):
 
     __metaclass__ = _PDAREntryMeta
 
+    # pylint: disable=W0613
     def __init__(self, target, payload='', mode=DEFAULT_MODE,
                  orig_digest=None, dest_digest=None,
                  hash_type=DEFAULT_HASH_TYPE,
@@ -90,14 +92,13 @@ class PDAREntry(object):
                 orig_digest = empty_hash
             if dest_digest is None:
                 dest_digest = empty_hash
-        
+
         self._mode = mode
         self._target = target
         self._orig_digest = orig_digest
         self._dest_digest = dest_digest
         self._payload = payload
-
-
+    # pylint: enable=W0613
 
     @property
     def type_code(self):
@@ -185,27 +186,33 @@ class PDAREntry(object):
                 key.replace('pdar_entry_', ''),
                 value) for key, value in  headers.iteritems())
         header_args = dict((
-                key.replace('pdar_',''), 
+                key.replace('pdar_', ''),
                 value) for key, value in header_args.iteritems())
+        # pylint: disable=E1101
         type_cls = cls.entry_class_map[headers[ENTRY_HEADER_TYPE]]
+        # pylint: enable=E1101
+        # pylint: disable=W0142
         return type_cls(
             payload=tfile.extractfile(tinfo).read(),
             **header_args)
+        # pylint: enable=W0142
 
     @classmethod
     def read_mode(cls, source_path):
         return stat.S_IMODE(os.stat(source_path).st_mode)
 
+    # pylint: disable=W0613
     @classmethod
     def create(cls, target, orig_target, dest_target, orig_path, dest_path,
                hash_type=DEFAULT_HASH_TYPE):
         return False
+    # pylint: enable=W0613
 
 
 class PDAREmptyEntry(PDAREntry):
 
     def __init__(self, target, payload='', mode=DEFAULT_MODE,
-                 orig_digest='', dest_digest='', 
+                 orig_digest='', dest_digest='',
                  hash_type=DEFAULT_HASH_TYPE,
                  **kwargs):
         if payload != '':
@@ -241,7 +248,7 @@ class PDARDeleteEntry(PDAREmptyEntry):
 class PDARSourceEntry(PDAREmptyEntry):
 
     def __init__(self, target, target_source, mode=DEFAULT_MODE,
-                 orig_digest='', dest_digest='', 
+                 orig_digest='', dest_digest='',
                  hash_type=DEFAULT_HASH_TYPE, **kwargs):
         super(PDARSourceEntry, self).__init__(
             target=target, mode=mode, orig_digest=orig_digest,
@@ -332,7 +339,7 @@ class PDARDiffEntry(PDAREntry):
 
         super(PDARDiffEntry, self).__init__(
             target=target, payload=payload, mode=mode,
-            orig_digest=orig_digest, dest_digest=dest_digest, 
+            orig_digest=orig_digest, dest_digest=dest_digest,
             hash_type=hash_type,
             **kwargs)
 
@@ -348,6 +355,5 @@ class PDARDiffEntry(PDAREntry):
                         target, orig_data=orig_reader.read(),
                         dest_data=dest_reader.read(),
                         mode=cls.read_mode(dest),
-                        hash_type=hash_type
-                        )
+                        hash_type=hash_type)
         return None
