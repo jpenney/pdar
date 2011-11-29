@@ -14,34 +14,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-PDAR_VERSION = '1.0'
-DEFAULT_HASH_TYPE = 'sha1'  #backwards compat
+'''Portable Delta ARchives'''
 
+PDAR_VERSION = '1.0.1'
+DEFAULT_HASH_TYPE = 'sha1'  # backwards compat
+
+# pylint: disable=W0401
+from pdar.archive import *
+from pdar.entry import *
 from pdar.errors import *
 from pdar.patcher import *
-from pdar.entry import *
-from pdar.archive import *
-
-import sys 
+# pylint: enable=W0401
 import os
+import sys
+
 
 __author__ = 'Jason Penney'
 __copyright__ = 'Copyright 2011, Jason Penney'
 __license__ = 'Apache License, Version 2.0'
 __credits__ = ['Jason Penney']
 __maintainer__ = 'Jason Penney'
-__version__ = '0.9.0b'
+__version__ = '0.9.5b'
 __url__ = 'http://github.com/jpenney/pdar'
 __description__ = 'Portable Delta ARchives'
 __long_description__ = '''
 Supports creating and applying **P**ortable **D**elta **Ar**chive
-(PDAR) files.  They can be used to distribute collections of patches in 
+(PDAR) files.  They can be used to distribute collections of patches in
 the form of binary deltas wrapped in a single file.
 '''
 
-pdar_ = sys.modules[__name__]
-pdar_.__doc__ = os.linesep.join(
-    [pdar_.__description__, '', pdar_.__long_description__])
-del pdar_
-
-    
+_PDAR = sys.modules[__name__]
+_PDAR.__doc__ = os.linesep.join(
+    [_PDAR.__description__, '', _PDAR.__long_description__])
+del _PDAR

@@ -14,28 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import fnmatch
-import re
-import os
-import tarfile
-import logging
-import filecmp
-
+from bz2 import BZ2File
 from datetime import datetime
 from gzip import GzipFile
-from tempfile import SpooledTemporaryFile
-from pkg_resources import parse_version
-
-from pdar.errors import *
-from pdar.entry import *
-from pdar.patcher import DEFAULT_PATCHER_TYPE
 from pdar import PDAR_VERSION, DEFAULT_HASH_TYPE
+from pdar.entry import *
+from pdar.errors import *
+from pdar.patcher import DEFAULT_PATCHER_TYPE
+from pkg_resources import parse_version
+from shutil import rmtree
+from tempfile import SpooledTemporaryFile, mkstemp
+import filecmp
+import fnmatch
+import logging
+import os
+import re
+import tarfile
 
 __all__ = ['PDArchive', 'PDAR_MAGIC', 'PDAR_ID']
 
 PDAR_MAGIC = 'PDAR'
 PDAR_ID = '%s%03d%c' % (
-    PDAR_MAGIC, int(float(PDAR_VERSION)), 0)
+    PDAR_MAGIC, int(parse_version(PDAR_VERSION)[0]), 0)
 
 ARCHIVE_HEADER_VERSION = 'pdar_version'
 ARCHIVE_HEADER_CREATED = 'pdar_created_datetime'
@@ -59,14 +59,12 @@ creating new pdar:
             pattern_re = re.compile(pattern_re)
 
             def target_gen(path):
-                for root, dirs, files in os.walk(path):
+                for root, dummy, files in os.walk(path):
                     for dest in (
                         os.path.normcase(
                             os.path.join(root, f)) for f in files \
                             if pattern_re.match(f)):
                         yield os.path.relpath(dest, path)
-
-            from pprint import pprint
 
             orig_targets = set(target_gen(orig_path))
             dest_targets = set(target_gen(dest_path))
@@ -111,17 +109,17 @@ creating new pdar:
 
                 for target in matches:
                     copied_targets.append((target, source, target))
-                    
+
                 if move_match:
                     target = move_match
                     moved_targets.append((target, source, target))
 
             def add_entry(targets, cls):
                 args = list(targets)
-                args += [ orig_path, dest_path, self.hash_type ]
-                entry = cls.create(*args)
+                args += [orig_path, dest_path, self.hash_type]
+                entry = cls.create(*args)  # pylint: disable=W0142
                 if entry:
-                    logging.info("adding '%s' entry for: %s" 
+                    logging.info("adding '%s' entry for: %s"
                                  % (entry.type_code, entry.target))
                     self._patches.append(entry)
                 else:
@@ -152,9 +150,8 @@ creating new pdar:
 
         else:
             raise InvalidParameterError(
-                "You must pass either 'orig_path', 'dest_path', and 'patterns' "
-                " OR 'payload'")
-
+                "You must pass either 'orig_path', 'dest_path', and "
+                "'patterns' OR 'payload'")
 
     @property
     def hash_type(self):
@@ -176,34 +173,43 @@ creating new pdar:
         if os.path.exists(path) and not force:
             raise RuntimeError('File already exists: %s' % path)
         with SpooledTemporaryFile() as tmpfile:
-            gzfile = GzipFile(mode='wb', fileobj=tmpfile, compresslevel=9)
-            try:
-                tfile = tarfile.open(
-                    mode='w', fileobj=gzfile,
-                    format=tarfile.PAX_FORMAT,
-                    pax_headers={
-                        ARCHIVE_HEADER_VERSION: unicode(self.pdar_version),
-                        ARCHIVE_HEADER_CREATED: unicode(
-                            self.created_datetime.isoformat()),
-                        ARCHIVE_HEADER_HASH_TYPE: unicode(self.hash_type)})
-                
-                try:
-                    for patch in self.patches:
-                        patch.pax_dump(tfile)
-                finally:
-                    tfile.close()
-                tmpfile.flush()
-            finally:
-                gzfile.close()
+            tfile = tarfile.open(
+                mode='w', fileobj=tmpfile,
+                format=tarfile.PAX_FORMAT,
+                pax_headers={
+                    ARCHIVE_HEADER_VERSION: unicode(self.pdar_version),
+                    ARCHIVE_HEADER_CREATED: unicode(
+                        self.created_datetime.isoformat()),
+                    ARCHIVE_HEADER_HASH_TYPE: unicode(self.hash_type)})
 
+            try:
+                for patch in self.patches:
+                    patch.pax_dump(tfile)
+            finally:
+                tfile.close()
             tmpfile.flush()
+
+            # find best compression
+            archive_path = None
+            for comp in [GzipFile, BZ2File]:
+                dummy, test_path = mkstemp()
+                os.close(dummy)
+                compfile = comp(test_path, mode='wb',
+                                compresslevel=9)
+                tmpfile.seek(0)
+                compfile.writelines(tmpfile)
+                compfile.close()
+                if not archive_path or os.path.getsize(
+                    archive_path) > os.path.getsize(test_path):
+                    if archive_path and os.path.exists(archive_path):
+                        os.unlink(archive_path)
+                    archive_path = test_path
+
             with open(path, 'wb') as patchfile:
                 patchfile.write(PDAR_ID)
-                tmpfile.seek(0)
-                patchfile.writelines(tmpfile)
-                patchfile.write(chr(0))
+                with open(archive_path, 'rb') as archive:
+                    patchfile.writelines(archive)
                 patchfile.flush()
-                patchfile.close()
 
     def patch(self, path=None, patcher=None):
         if patcher is None:
@@ -213,17 +219,20 @@ creating new pdar:
 
     @classmethod
     def load(cls, path):
-        with open(path, 'rb') as patchfile:
-            file_id = patchfile.read(len(PDAR_ID))
-            if not file_id.startswith(PDAR_MAGIC):
-                raise PDArchiveFormatError("Not a pdar file: %s" % (path))
-            if file_id != PDAR_ID:
-                raise PDArchiveFormatError(
-                    "Unsupported pdar version ID '%s': %s"
-                    % (file_id[len(PDAR_MAGIC):-1], path))
+        with SpooledTemporaryFile() as archive:
+            with open(path, 'rb') as patchfile:
+                file_id = patchfile.read(len(PDAR_ID))
+                if not file_id.startswith(PDAR_MAGIC):
+                    raise PDArchiveFormatError("Not a pdar file: %s" % (path))
+                if file_id != PDAR_ID:
+                    raise PDArchiveFormatError(
+                        "Unsupported pdar version ID '%s': %s"
+                        % (file_id[len(PDAR_MAGIC):-1], path))
+                archive.writelines(patchfile)
+            archive.seek(0)
             patches = []
             payload = {}
-            tfile = tarfile.open(mode='r:*', fileobj=patchfile)
+            tfile = tarfile.open(mode='r:*', fileobj=archive)
             try:
                 payload.update(tfile.pax_headers)
                 if 'created_datetime' in payload:
