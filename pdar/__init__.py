@@ -34,7 +34,7 @@ __copyright__ = 'Copyright 2011, Jason Penney'
 __license__ = 'Apache License, Version 2.0'
 __credits__ = ['Jason Penney']
 __maintainer__ = 'Jason Penney'
-__version__ = '0.9.0b'
+__version__ = '0.9.5b'
 __url__ = 'http://github.com/jpenney/pdar'
 __description__ = 'Portable Delta ARchives'
 __long_description__ = '''
@@ -43,7 +43,7 @@ Supports creating and applying **P**ortable **D**elta **Ar**chive
 the form of binary deltas wrapped in a single file.
 '''
 
-__pdar__ = sys.modules[__name__]
-__pdar__.__doc__ = os.linesep.join(
-    [__pdar__.__description__, '', __pdar__.__long_description__])
-del __pdar__
+_PDAR = sys.modules[__name__]
+_PDAR.__doc__ = os.linesep.join(
+    [_PDAR.__description__, '', _PDAR.__long_description__])
+del _PDAR

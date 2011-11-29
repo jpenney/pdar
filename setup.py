@@ -25,7 +25,7 @@ import sys
 import imp
 import re
 
-if sys.version_info < (2,6):
+if sys.version_info < (2, 6):
     print "Python 2.6 or greater required"
     sys.exit(1)
 
@@ -70,15 +70,14 @@ def get_meta(pkgname, path='.'):
 
             else:
                 match = False
-        code_re = re.compile(r'^(__[^ ]+__)', flags=re.M|re.S)
+        code_re = re.compile(r'^(__[^ ]+__)', flags=re.M | re.S)
         code = code_re.sub(r"meta['\1']",
                            os.linesep.join(matchlines))
         try:
             exec(code)
         except Exception, err:
-            sys.stderr.write("error parsing metadata from '%s'"
-                             % pkgname)
-        
+            sys.stderr.write("error parsing metadata from '%s': %s"
+                             % (pkgname, str(err)))
     return meta
 
 extra = {}
@@ -88,7 +87,7 @@ if sys.version_info >= (3,):
 if py2exe:
     script_path = os.path.join('build', 'py2exe', 'scripts', 'winpdar.py')
     distutils.dir_util.mkpath(os.path.dirname(script_path))
-    with open(script_path,'w') as script_file:
+    with open(script_path, 'w') as script_file:
         script_file.write('''\
 import sys
 import pdar.console
@@ -96,10 +95,10 @@ import pdar.console
 if __name__ == "__main__":
     sys.exit(pdar.console.pdar_cmd())
 ''')
-    extra.setdefault('options',{})
+    extra.setdefault('options', {})
     extra['options'].update({
             'py2exe': {
-                'optimize': 2,   
+                'optimize': 2,
                 'bundle_files': 1,
                 'dist_dir': os.path.join('dist', 'py2exe'),
                 }})
@@ -115,8 +114,8 @@ setup(
     name=_pkgname,
     version=meta.get('__version__', 'unknown'),
     author=meta.get('__author__', 'Jason Penney'),
-    author_email=meta.get('__email__','jpenney@jczorkmid.net'),
-    url=meta.get('__url__','http://jasonpenney.net/'),
+    author_email=meta.get('__email__', 'jpenney@jczorkmid.net'),
+    url=meta.get('__url__', 'http://jasonpenney.net/'),
     maintainer=meta.get('__maintainer__', 'Jason Penney'),
     maintainer_email=meta.get('__maintainer_email__',
                               meta.get('__email__',
