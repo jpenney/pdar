@@ -69,6 +69,7 @@ class BasePatcher(object):  # pylint: disable=R0922
         raise NotImplementedError()
 
     def _do_apply_entry(self, entry, target, data):
+        target = os.path.abspath(target)
         func = getattr(self, 'apply_entry_%s' % entry.type_code,
                        None)
         if func is None:
