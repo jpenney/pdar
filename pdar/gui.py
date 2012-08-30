@@ -218,6 +218,8 @@ class ExistingPdarWindow(Window):
                                  "The original files will be overwritten.\n\n"
                                  "Do you wish to continue?"):
                 return
+        handler = PdarGUILogHandler()
+        logging.getLogger().addHandler(handler)
 
         try:
             self.archive.patch(path)
@@ -226,6 +228,37 @@ class ExistingPdarWindow(Window):
             return
         Alerts.alert('note', "Patch applied successfully")
         self.close_cmd()
+
+
+class PdarGUILogHandler(logging.Handler):
+
+    def __init__(self, *args, **kwargs):
+        logging.Handler.__init__(self, *args, **kwargs)
+
+        self._dialog = Dialog(closable=True, resizable=True, size=(800, 600))
+        self._view = ScrollableView(
+                container=self._dialog,
+                size=(self._dialog.width - 20, self._dialog.height - 20))
+        self._view.extent = (self._view.width / 2, self._view.height - 10)
+        self._view.position = (10, 10)
+        self._dialog.shrink_wrap()
+        self._dialog.show()
+        self._view.update()
+        self._next_position = (0, 0)
+
+    def emit(self, record):
+        print "MY HANDLER: %s" % self.format(record)
+        label = Label(self.format(record))
+        label.position = self._next_position
+        self._view.extent = (label.right
+                             if label.right > self._view.extent[0]
+                             else self._view.extent[0],
+                             self._next_position[1] + (label.height * 2))
+        self._view.add(label)
+        self._next_position = (label.left, label.top + label.height)
+        self._view.scroll_offset = self._next_position
+        self._view.update()
+
 
 class PdarDocument(Document):
 
@@ -244,4 +277,7 @@ class PdarDocument(Document):
 
 
 if __name__ == '__main__':
+
+    logging.basicConfig(format="%(message)s",
+                        level=logging.DEBUG)
     PdarApplication(title='PDAR GUI').run()
