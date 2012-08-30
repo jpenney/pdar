@@ -41,6 +41,7 @@ if True or sys.platform == 'win32':
 
 _pkgname = 'pdar'
 
+
 def get_meta(pkgname, path='.'):
     '''Try to extract metadata fields (__version__, __author__, etc.)
     from a package without importing it'''
@@ -105,7 +106,6 @@ if __name__ == "__main__":
     extra.update({'zipfile': None,
                   'console': [{'script': script_path,
                                'dest_base': 'pdar'}]})
-
 
 
 meta = get_meta(_pkgname)

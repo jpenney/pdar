@@ -172,6 +172,10 @@ creating new pdar:
     def save(self, path, force=False):
         if os.path.exists(path) and not force:
             raise RuntimeError('File already exists: %s' % path)
+        with open(path, 'wb') as patchfile:
+            self.save_archive(patchfile)
+
+    def save_archive(self, patchfile):
         with SpooledTemporaryFile() as tmpfile:
             tfile = tarfile.open(
                 mode='w', fileobj=tmpfile,
@@ -205,11 +209,10 @@ creating new pdar:
                         os.unlink(archive_path)
                     archive_path = test_path
 
-            with open(path, 'wb') as patchfile:
-                patchfile.write(PDAR_ID)
-                with open(archive_path, 'rb') as archive:
-                    patchfile.writelines(archive)
-                patchfile.flush()
+            patchfile.write(PDAR_ID)
+            with open(archive_path, 'rb') as archive:
+                patchfile.writelines(archive)
+            patchfile.flush()
 
     def patch(self, path=None, patcher=None):
         if patcher is None:
@@ -219,31 +222,38 @@ creating new pdar:
 
     @classmethod
     def load(cls, path):
+        with open(path, 'rb') as patchfile:
+            try:
+                return cls.load_archive(patchfile)
+            except PDArchiveFormatError, err:
+                raise PDArchiveFormatError("%s: %s" % (str(err), path))
+
+    @classmethod
+    def load_archive(cls, patchfile):
         with SpooledTemporaryFile() as archive:
-            with open(path, 'rb') as patchfile:
-                file_id = patchfile.read(len(PDAR_ID))
-                if not file_id.startswith(PDAR_MAGIC):
-                    raise PDArchiveFormatError("Not a pdar file: %s" % (path))
-                if file_id != PDAR_ID:
-                    raise PDArchiveFormatError(
-                        "Unsupported pdar version ID '%s': %s"
-                        % (file_id[len(PDAR_MAGIC):-1], path))
-                archive.writelines(patchfile)
+            file_id = patchfile.read(len(PDAR_ID))
+            if not file_id.startswith(PDAR_MAGIC):
+                raise PDArchiveFormatError("Not a pdar file")
+            if file_id != PDAR_ID:
+                raise PDArchiveFormatError(
+                    "Unsupported pdar version ID '%s'"
+                    % (file_id[len(PDAR_MAGIC):-1]))
+            archive.writelines(patchfile)
             archive.seek(0)
             patches = []
             payload = {}
             tfile = tarfile.open(mode='r:*', fileobj=archive)
             try:
                 payload.update(tfile.pax_headers)
-                if 'created_datetime' in payload:
-                    cdt = payload['created_datetime']
+                if ARCHIVE_HEADER_CREATED in payload:
+                    cdt = payload[ARCHIVE_HEADER_CREATED]
                     if isinstance(cdt, basestring):
                         iso, iso_ms = cdt.split('.', 1)
                         cdt = datetime.strptime(
                             iso.replace("-", ""), "%Y%m%dT%H:%M:%S")
                         if iso_ms:
                             cdt = cdt.replace(microsecond=int(iso_ms))
-                    payload['created_datetime'] = cdt
+                    payload[ARCHIVE_HEADER_CREATED] = cdt
 
                 data = tfile.next()
                 while data:
