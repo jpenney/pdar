@@ -196,7 +196,7 @@ creating new pdar:
             # find best compression
             archive_path = None
             for comp in [GzipFile, BZ2File]:
-                dummy, test_path = mkstemp()
+                dummy, test_path = mkstemp(prefix=__name__)
                 os.close(dummy)
                 compfile = comp(test_path, mode='wb',
                                 compresslevel=9)
@@ -230,7 +230,7 @@ creating new pdar:
 
     @classmethod
     def load_archive(cls, patchfile):
-        with SpooledTemporaryFile() as archive:
+        with SpooledTemporaryFile(prefix=__name__) as archive:
             file_id = patchfile.read(len(PDAR_ID))
             if not file_id.startswith(PDAR_MAGIC):
                 raise PDArchiveFormatError("Not a pdar file")
