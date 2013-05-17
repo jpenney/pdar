@@ -2,7 +2,7 @@
 
 # This file is part of pdar.
 #
-# Copyright 2011 Jason Penney
+# Copyright 2011-2013 Jason Penney
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -109,17 +109,19 @@ if __name__ == "__main__":
 
 
 meta = get_meta(_pkgname)
+# since we already quit if Python version < 2.6, we can use `str.format`
+default_email = 'jpenney{at}jczorkmid{dot}net'.format(at='@', dot='.')
 
 setup(
     name=_pkgname,
     version=meta.get('__version__', 'unknown'),
     author=meta.get('__author__', 'Jason Penney'),
-    author_email=meta.get('__email__', 'jpenney@jczorkmid.net'),
+    author_email=meta.get('__email__', default_email),
     url=meta.get('__url__', 'http://jasonpenney.net/'),
     maintainer=meta.get('__maintainer__', 'Jason Penney'),
     maintainer_email=meta.get('__maintainer_email__',
                               meta.get('__email__',
-                                       'jpenney@jczorkmid.net')),
+                                       default_email)),
     description=meta.get('__description__', None),
     long_description=meta.get('__long_description__', None),
     download_url=meta.get('__download_url__', None),
