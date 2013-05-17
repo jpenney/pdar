@@ -80,7 +80,10 @@ class BasePatcher(object):  # pylint: disable=R0922
         return func(entry, target, data)
 
     def apply_archive(self):
-        self._do_apply_archive()
+        try:
+            self._do_apply_archive()
+        except Exception, err:
+            self.apply_archive_error_handler(self.archive, err)
 
     def apply_entry(self, entry, target, data):
         try:
@@ -96,15 +99,16 @@ class PDArchiveHandler(BaseErrorHandler):
             "Applying archive failed: %s", str(err))
         logging.warn(
             "Attempting to back out changes")
-
         for target, backup in patcher.backups.iteritems():
             target = os.path.join(patcher.path, target)
             if backup:
+                logging.debug("restoring '%s'" % target)
                 shutil.copy(backup, target)
             else:
                 # newly created file
+                logging.debug("removing newly created file: '%s'" % target)
                 os.unlink(target)
-
+        logging.info("Changes successfully backed out")
         raise err
 
     def handle_entry(self, patcher, entry, target, data, err):
@@ -191,10 +195,11 @@ class PDArchivePatcher(BasePatcher):
                 % entry.target)
 
         exists = os.path.exists(path)
+
         tmp_path = None
         if exists:
             orig_mode = stat.S_IMODE(os.stat(path).st_mode)
-            dummy, tmp_path = mkstemp()
+            dummy, tmp_path = mkstemp(prefix=__name__)
             os.close(dummy)
 
         backup_created = False
@@ -204,7 +209,6 @@ class PDArchivePatcher(BasePatcher):
 
                 if not os.access(path, os.W_OK):
                     os.chmod(path, stat.S_IREAD | stat.S_IWRITE | orig_mode)
-
             backup_created = True
             try:
                 with open(path, 'wb') as writer:
@@ -223,7 +227,12 @@ class PDArchivePatcher(BasePatcher):
                 raise err
 
         finally:
-            if backup_created and not entry.target in self.backups:
+            source = getattr(entry, 'target_source', None)
+            if source:
+                if not source in self.backups:
+                    self.backups[source] = tmp_path
+                tmp_path = None
+            if not entry.target in self.backups:
                 self.backups[entry.target] = tmp_path
 
     def _verify_dest_dir(self, path):
@@ -241,7 +250,7 @@ class PDArchivePatcher(BasePatcher):
 
     def apply_entry_move(self, entry, path, data):
         new_data = self.apply_entry_copy(entry, path, data)
-        self.to_unlink.append(entry.target_source)
+        self.to_unlink.append(os.path.abspath(entry.target_source))
         return new_data
 
     def apply_entry_delete(self, entry, path, data):
